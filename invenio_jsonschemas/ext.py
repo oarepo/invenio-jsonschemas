@@ -13,7 +13,6 @@
 from __future__ import absolute_import, print_function
 
 import json
-import os
 from urllib.parse import urlsplit
 
 import importlib_metadata
@@ -26,6 +25,8 @@ from werkzeug.utils import cached_property, import_string
 from . import config
 from .errors import JSONSchemaDuplicate, JSONSchemaNotFound
 from .views import create_blueprint
+
+import importlib.metadata
 
 try:
     from functools import lru_cache
@@ -54,31 +55,44 @@ class InvenioJSONSchemasState(object):
             host_matching=True,
         )
 
-    def register_schemas_dir(self, directory):
-        """Recursively register all json-schemas in a directory.
+    def register_schemas_dir(self, directory_files, package_root="/"):
+        """Register all json-schemas in a directory using importlib.
 
-        :param directory: directory path.
+        :param directory_files: directory files to add as schema.
         """
-        for root, dirs, files in os.walk(directory):
-            dir_path = os.path.relpath(root, directory)
-            if dir_path == ".":
-                dir_path = ""
-            for file_ in files:
-                if file_.lower().endswith((".json")):
-                    schema_name = os.path.join(dir_path, file_)
-                    if schema_name in self.schemas:
-                        raise JSONSchemaDuplicate(
-                            schema_name, self.schemas[schema_name], directory
-                        )
-                    self.schemas[schema_name] = os.path.abspath(directory)
 
-    def register_schema(self, directory, path):
+        for file in directory_files:
+            if not file.name.lower().endswith('.json'):
+                continue
+
+            relative_path = file.relative_to(package_root)
+            schema_name = str(relative_path)
+
+            if schema_name in self.schemas:
+                raise JSONSchemaDuplicate(
+                    schema_name, self.schemas[schema_name], package_root
+                )
+
+            self.schemas[schema_name] = file
+
+
+    def register_schema(self, package_name, path):
         """Register a json-schema.
 
-        :param directory: root directory path.
+        :param package_name: name of the package with a schema.
         :param path: schema path, relative to the root directory.
         """
-        self.schemas[path] = os.path.abspath(directory)
+        try:
+            files = importlib.metadata.files(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            raise RuntimeError(f"Package '{package_name}' not found")
+
+        relevant_file = [
+            file for file in files
+            if path in str(file)
+        ]
+
+        self.schemas[path] = relevant_file[0]
 
     def get_schema_dir(self, path):
         """Retrieve the directory containing the given schema.
@@ -91,7 +105,7 @@ class InvenioJSONSchemasState(object):
         """
         if path not in self.schemas:
             raise JSONSchemaNotFound(path)
-        return self.schemas[path]
+        return str(self.schemas[path].parent)
 
     def get_schema_path(self, path):
         """Compute the schema's absolute path from a schema relative path.
@@ -103,7 +117,8 @@ class InvenioJSONSchemasState(object):
         """
         if path not in self.schemas:
             raise JSONSchemaNotFound(path)
-        return os.path.join(self.schemas[path], path)
+
+        return str(self.schemas[path])
 
     @lru_cache(maxsize=1000)
     def get_schema(self, path, with_refs=False, resolved=False):
@@ -119,17 +134,21 @@ class InvenioJSONSchemasState(object):
         """
         if path not in self.schemas:
             raise JSONSchemaNotFound(path)
-        with open(os.path.join(self.schemas[path], path)) as file_:
-            schema = json.load(file_)
-            if with_refs:
-                schema = JsonRef.replace_refs(
+
+        schema = json.loads(self.schemas[path].read_text())
+
+        if with_refs:
+            schema = JsonRef.replace_refs(
                     schema,
                     base_uri=request.base_url,
                     loader=self.loader_cls() if self.loader_cls else None,
                 )
-            if resolved:
-                schema = self.resolver_cls(schema)
-            return schema
+
+        if resolved:
+            schema = self.resolver_cls(schema)
+
+        return schema
+
 
     def list_schemas(self):
         """List all JSON-schema names.
@@ -266,8 +285,24 @@ class InvenioJSONSchemas(object):
                     whitelisted_entries is None
                     or base_entry.name in whitelisted_entries
                 ):
-                    directory = os.path.dirname(base_entry.load().__file__)
-                    state.register_schemas_dir(directory)
+                    package_name = base_entry.value.split(".")[0]
+
+                    try:
+                        files = importlib.metadata.files(package_name) # get all files from the package
+                    except importlib.metadata.PackageNotFoundError:
+                        raise RuntimeError(f"Package '{package_name}' from entrypoint {base_entry} not found")
+
+                    path = "/".join(base_entry.value.split("."))
+                    
+                    # filter out not starting with given path
+                    relevant_files = [
+                        file for file in files
+                        if str(file).startswith(path)
+                    ]
+                    
+                    # find all schemas and register them
+                    state.register_schemas_dir(relevant_files, path)
+
 
         # Init blueprints
         _register_blueprint = app.config.get(register_config_blueprint)
