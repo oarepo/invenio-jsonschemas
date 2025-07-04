@@ -14,6 +14,7 @@ from __future__ import absolute_import, print_function
 
 import json
 import os
+from pathlib import Path
 
 import mock
 import pytest
@@ -32,7 +33,6 @@ from invenio_jsonschemas.config import JSONSCHEMAS_URL_SCHEME
 from invenio_jsonschemas.errors import JSONSchemaDuplicate, JSONSchemaNotFound
 from invenio_jsonschemas.utils import resolve_schema
 
-from pathlib import Path
 
 def test_version():
     """Test version import."""
@@ -89,18 +89,18 @@ def build_schemas(id):
         ),
     }
 
+
 def test_api(app, dir_factory):
     """Test API."""
     ext = InvenioJSONSchemas(app, entry_point_group=None)
     schema_files = build_schemas(1)
-    
+
     with dir_factory(schema_files) as directory:
         schema_paths = {}
         for filename in schema_files:
             file_path = Path(directory) / filename
             schema_paths[filename] = file_path
-        
-        
+
         ext.register_schemas_dir(schema_paths)
         for path in schema_files.keys():
             # test get_schema_path
@@ -152,7 +152,7 @@ def test_cache(app, dir_factory):
             for filename in schema_files:
                 file_path = Path(directory) / filename
                 schema_paths.append(file_path)
-    
+
             ext.register_schemas_dir(schema_paths, directory)
             assert m.counter == 0
             ext.get_schema("rootschema_1.json")
@@ -164,6 +164,7 @@ def test_cache(app, dir_factory):
             assert m.counter == 2
             ext.get_schema("sub1/subschema_1.json")
             assert m.counter == 2
+
 
 @pytest.mark.skip
 def test_register_schema(app, dir_factory):
@@ -191,7 +192,7 @@ def test_redefine(app, dir_factory):
         for filename in schema_files:
             file_path = Path(dir1) / filename
             schema_paths[filename] = file_path
-        
+
         ext.register_schemas_dir(schema_paths)
         # register schemas from a directory which have the same relative
         # paths
@@ -202,6 +203,7 @@ def test_redefine(app, dir_factory):
         with pytest.raises(JSONSchemaDuplicate) as exc_info:
             ext.register_schemas_dir(schema_paths)
         assert exc_info.value.schema in schema_files.keys()
+
 
 @pytest.mark.skip
 def test_view(app, pkg_factory, mock_entry_points):
@@ -238,6 +240,7 @@ def test_view(app, pkg_factory, mock_entry_points):
                 assert json.loads(schema) == json.loads(res.get_data(as_text=True))
             res = client.get("{0}/nonexisting".format(endpoint))
             assert res.status_code == 404
+
 
 @pytest.mark.skip
 def test_replace_refs_in_view(app, pkg_factory, mock_entry_points):
@@ -279,6 +282,7 @@ def test_replace_refs_in_view(app, pkg_factory, mock_entry_points):
                 res.get_data(as_text=True)
             )
 
+
 @pytest.mark.skip
 def test_replace_resolve_in_view(app, pkg_factory, mock_entry_points):
     """Test replace refs config in view."""
@@ -317,6 +321,7 @@ def test_replace_resolve_in_view(app, pkg_factory, mock_entry_points):
             assert json.loads(schemas["sub/schema.json"]) == json.loads(
                 res.get_data(as_text=True)
             )
+
 
 @pytest.mark.skip
 def test_alternative_entry_point_group_init(app, pkg_factory, mock_entry_points):
@@ -429,6 +434,7 @@ def test_url_mapping(app, dir_factory, url_scheme):
             ) == ext.path_to_url("sub1/subschema_1.json")
             assert ext.path_to_url("invalid.json") is None
 
+
 @pytest.mark.skip
 @pytest.mark.parametrize(
     "whitelisted, expected",
@@ -493,6 +499,7 @@ def test_resolve_schema():
         "type": "object",
     }
     assert resolve_schema(test_schema) == resolved_schema
+
 
 @pytest.mark.skip
 def test_export_refresolver_store(app, dir_factory):

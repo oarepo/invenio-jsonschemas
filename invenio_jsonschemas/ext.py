@@ -12,6 +12,7 @@
 
 from __future__ import absolute_import, print_function
 
+import importlib.metadata
 import json
 from urllib.parse import urlsplit
 
@@ -25,8 +26,6 @@ from werkzeug.utils import cached_property, import_string
 from . import config
 from .errors import JSONSchemaDuplicate, JSONSchemaNotFound
 from .views import create_blueprint
-
-import importlib.metadata
 
 try:
     from functools import lru_cache
@@ -60,28 +59,23 @@ class InvenioJSONSchemasState(object):
 
         :param schemas: dictionary with keys of potential schema name and value path to that file.
         """
-
         for potential_schema_name, path in schemas.items():
             # check if it is json, because directory can include __init__.py files for example
             if not potential_schema_name.endswith(".json"):
                 continue
-            
+
             self.register_schema(potential_schema_name, path)
-            
 
     def register_schema(self, schema_name, path):
         """Register a json-schema.
 
-        :param schema_name: name under which to register the schema 
+        :param schema_name: name under which to register the schema
         :param path: full path to the file
-        
-        .. note:: Implementation assumes that paths for each file have read_text() function, later used in get_schema(...). 
-        In the current version all paths are instances of PackagePath. 
+
+        .. note:: Implementation assumes that paths for each file have read_text() function, later used in get_schema(...). In the current version all paths are instances of PackagePath.
         """
         if schema_name in self.schemas:
-                raise JSONSchemaDuplicate(
-                    schema_name, self.schemas[schema_name], path
-                )
+            raise JSONSchemaDuplicate(schema_name, self.schemas[schema_name], path)
         self.schemas[schema_name] = path
 
     def get_schema_dir(self, path):
@@ -130,16 +124,15 @@ class InvenioJSONSchemasState(object):
 
         if with_refs:
             schema = JsonRef.replace_refs(
-                    schema,
-                    base_uri=request.base_url,
-                    loader=self.loader_cls() if self.loader_cls else None,
-                )
+                schema,
+                base_uri=request.base_url,
+                loader=self.loader_cls() if self.loader_cls else None,
+            )
 
         if resolved:
             schema = self.resolver_cls(schema)
 
         return schema
-
 
     def list_schemas(self):
         """List all JSON-schema names.
@@ -280,14 +273,18 @@ class InvenioJSONSchemas(object):
                     package_name = base_entry.value.split(".")[0]
 
                     try:
-                        files = importlib.metadata.files(package_name) # get all files from the package
+                        files = importlib.metadata.files(
+                            package_name
+                        )  # get all files from the package
                     except importlib.metadata.PackageNotFoundError:
-                        raise RuntimeError(f"Package '{package_name}' from entrypoint {base_entry} not found")
+                        raise RuntimeError(
+                            f"Package '{package_name}' from entrypoint {base_entry} not found"
+                        )
 
                     # transform base entry to path, for example invenio_records_resources.records.jsonschemas -> invenio_records_resources/records/jsonschemas
                     # which is used later to compute relative path of given json schema
                     path = "/".join(base_entry.value.split("."))
-                    
+
                     # get all files located in given folder and save as dictionary with key schema_name and value is path to that file
                     # for example:
                     # {
@@ -296,13 +293,13 @@ class InvenioJSONSchemas(object):
                     #   etc...
                     # }
                     relevant_files = {
-                        str(file.relative_to(path)):file for file in files
+                        str(file.relative_to(path)): file
+                        for file in files
                         if str(file).startswith(path)
                     }
-                    
+
                     # register schemas
                     state.register_schemas_dir(relevant_files)
-
 
         # Init blueprints
         _register_blueprint = app.config.get(register_config_blueprint)
