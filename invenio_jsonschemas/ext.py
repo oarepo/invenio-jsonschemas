@@ -73,9 +73,10 @@ class InvenioJSONSchemasState(object):
         """Register a json-schema.
 
         :param schema_name: name under which to register the schema 
-        :param path: path to the file
+        :param path: full path to the file
         
-        :no
+        .. note:: Implementation assumes that paths for each file have read_text() function, later used in get_schema(...). 
+        In the current version all paths are instances of PackagePath. 
         """
         if schema_name in self.schemas:
                 raise JSONSchemaDuplicate(
@@ -124,6 +125,7 @@ class InvenioJSONSchemasState(object):
         if path not in self.schemas:
             raise JSONSchemaNotFound(path)
 
+        # schemas are saved as PackagePaths with read_text() function
         schema = json.loads(self.schemas[path].read_text())
 
         if with_refs:
