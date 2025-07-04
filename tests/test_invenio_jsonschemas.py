@@ -95,13 +95,13 @@ def test_api(app, dir_factory):
     schema_files = build_schemas(1)
     
     with dir_factory(schema_files) as directory:
-        schema_paths = []
+        schema_paths = {}
         for filename in schema_files:
             file_path = Path(directory) / filename
-            schema_paths.append(file_path)
+            schema_paths[filename] = file_path
         
         
-        ext.register_schemas_dir(schema_paths, directory)
+        ext.register_schemas_dir(schema_paths)
         for path in schema_files.keys():
             # test get_schema_path
             assert ext.get_schema_path(path) == os.path.join(directory, path)
@@ -187,19 +187,20 @@ def test_redefine(app, dir_factory):
     ext = InvenioJSONSchemas(app, entry_point_group=None)
     schema_files = build_schemas(1)
     with dir_factory(schema_files) as dir1, dir_factory(schema_files) as dir2:
-        schema_paths = []
+        schema_paths = {}
         for filename in schema_files:
             file_path = Path(dir1) / filename
-            schema_paths.append(file_path)
-        ext.register_schemas_dir(schema_paths, dir1)
+            schema_paths[filename] = file_path
+        
+        ext.register_schemas_dir(schema_paths)
         # register schemas from a directory which have the same relative
         # paths
-        schema_paths = []
+        schema_paths = {}
         for filename in schema_files:
             file_path = Path(dir2) / filename
-            schema_paths.append(file_path)
+            schema_paths[filename] = file_path
         with pytest.raises(JSONSchemaDuplicate) as exc_info:
-            ext.register_schemas_dir(schema_paths, dir2)
+            ext.register_schemas_dir(schema_paths)
         assert exc_info.value.schema in schema_files.keys()
 
 @pytest.mark.skip
@@ -397,11 +398,11 @@ def test_url_mapping(app, dir_factory, url_scheme):
     schema_files = build_schemas(1)
 
     with dir_factory(schema_files) as directory:
-        schema_paths = []
+        schema_paths = {}
         for filename in schema_files:
             file_path = Path(directory) / filename
-            schema_paths.append(file_path)
-        ext.register_schemas_dir(schema_paths, directory)
+            schema_paths[filename] = file_path
+        ext.register_schemas_dir(schema_paths)
         with app.app_context():
             assert "sub1/subschema_1.json" == ext.url_to_path(
                 "{0}://inveniosoftware.org/schemas/sub1/subschema_1.json".format(
