@@ -55,44 +55,30 @@ class InvenioJSONSchemasState(object):
             host_matching=True,
         )
 
-    def register_schemas_dir(self, directory_files, package_root="/"):
+    def register_schemas_dir(self, schemas):
         """Register all json-schemas in a directory using importlib.
 
         :param directory_files: directory files to add as schema.
         """
 
-        for file in directory_files:
-            if not file.name.lower().endswith('.json'):
+        for potential_schema_name, path in schemas.items():
+            if not potential_schema_name.endswith(".json"):
                 continue
+            
+            self.register_schema(potential_schema_name, path)
+            
 
-            relative_path = file.relative_to(package_root)
-            schema_name = str(relative_path)
-
-            if schema_name in self.schemas:
-                raise JSONSchemaDuplicate(
-                    schema_name, self.schemas[schema_name], package_root
-                )
-
-            self.schemas[schema_name] = file
-
-
-    def register_schema(self, package_name, path):
+    def register_schema(self, schema_name, path):
         """Register a json-schema.
 
-        :param package_name: name of the package with a schema.
-        :param path: schema path, relative to the root directory.
+        :param schema_name: name under which to register the schema 
+        :param path: schema path to the file
         """
-        try:
-            files = importlib.metadata.files(package_name)
-        except importlib.metadata.PackageNotFoundError:
-            raise RuntimeError(f"Package '{package_name}' not found")
-
-        relevant_file = [
-            file for file in files
-            if path in str(file)
-        ]
-
-        self.schemas[path] = relevant_file[0]
+        if schema_name in self.schemas:
+                raise JSONSchemaDuplicate(
+                    schema_name, self.schemas[schema_name], path
+                )
+        self.schemas[schema_name] = path
 
     def get_schema_dir(self, path):
         """Retrieve the directory containing the given schema.
@@ -295,13 +281,13 @@ class InvenioJSONSchemas(object):
                     path = "/".join(base_entry.value.split("."))
                     
                     # filter out not starting with given path
-                    relevant_files = [
-                        file for file in files
+                    relevant_files = {
+                        str(file.relative_to(path)):file for file in files
                         if str(file).startswith(path)
-                    ]
+                    }
                     
                     # find all schemas and register them
-                    state.register_schemas_dir(relevant_files, path)
+                    state.register_schemas_dir(relevant_files)
 
 
         # Init blueprints
