@@ -56,12 +56,13 @@ class InvenioJSONSchemasState(object):
         )
 
     def register_schemas_dir(self, schemas):
-        """Register all json-schemas in a directory using importlib.
+        """Register all json-schemas.
 
-        :param directory_files: directory files to add as schema.
+        :param schemas: dictionary with keys of potential schema name and value path to that file.
         """
 
         for potential_schema_name, path in schemas.items():
+            # check if it is json, because directory can include __init__.py files for example
             if not potential_schema_name.endswith(".json"):
                 continue
             
@@ -72,7 +73,9 @@ class InvenioJSONSchemasState(object):
         """Register a json-schema.
 
         :param schema_name: name under which to register the schema 
-        :param path: schema path to the file
+        :param path: path to the file
+        
+        :no
         """
         if schema_name in self.schemas:
                 raise JSONSchemaDuplicate(
@@ -271,6 +274,7 @@ class InvenioJSONSchemas(object):
                     whitelisted_entries is None
                     or base_entry.name in whitelisted_entries
                 ):
+                    # get package name from base entry, for example invenio_records_resources.records.jsonschemas -> invenio_records_resources
                     package_name = base_entry.value.split(".")[0]
 
                     try:
@@ -278,15 +282,23 @@ class InvenioJSONSchemas(object):
                     except importlib.metadata.PackageNotFoundError:
                         raise RuntimeError(f"Package '{package_name}' from entrypoint {base_entry} not found")
 
+                    # transform base entry to path, for example invenio_records_resources.records.jsonschemas -> invenio_records_resources/records/jsonschemas
+                    # which is used later to compute relative path of given json schema
                     path = "/".join(base_entry.value.split("."))
                     
-                    # filter out not starting with given path
+                    # get all files located in given folder and save as dictionary with key schema_name and value is path to that file
+                    # for example:
+                    # {
+                    #  "__init__.py": invenio_records_resources/records/jsonschemas/__init__.py
+                    #  "definitions-v1.0.0": invenio_records_resources/records/jsonschemas/definitions-v1.0.0.json
+                    #   etc...
+                    # }
                     relevant_files = {
                         str(file.relative_to(path)):file for file in files
                         if str(file).startswith(path)
                     }
                     
-                    # find all schemas and register them
+                    # register schemas
                     state.register_schemas_dir(relevant_files)
 
 
