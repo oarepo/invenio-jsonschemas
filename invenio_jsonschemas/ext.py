@@ -12,7 +12,7 @@
 
 from __future__ import absolute_import, print_function
 
-import importlib.metadata
+import importlib
 import json
 from urllib.parse import urlsplit
 
@@ -72,7 +72,7 @@ class InvenioJSONSchemasState(object):
         :param schema_name: name under which to register the schema
         :param path: full path to the file
 
-        .. note:: Implementation assumes that paths for each file have read_text() function, later used in get_schema(...). In the current version all paths are instances of PackagePath.
+            .. note:: Implementation assumes that paths for each file have read_text() function, later used in get_schema(...).
         """
         if schema_name in self.schemas:
             raise JSONSchemaDuplicate(schema_name, self.schemas[schema_name], path)
@@ -119,7 +119,6 @@ class InvenioJSONSchemasState(object):
         if path not in self.schemas:
             raise JSONSchemaNotFound(path)
 
-        # schemas are saved as PackagePaths with read_text() function
         schema = json.loads(self.schemas[path].read_text())
 
         if with_refs:
@@ -269,34 +268,43 @@ class InvenioJSONSchemas(object):
                     whitelisted_entries is None
                     or base_entry.name in whitelisted_entries
                 ):
-                    # get package name from base entry, for example invenio_records_resources.records.jsonschemas -> invenio_records_resources
-                    package_name = base_entry.value.split(".")[0]
+                    module_name = base_entry.value
 
                     try:
-                        files = importlib.metadata.files(
-                            package_name
-                        )  # get all files from the package
+                        files = importlib.resources.files(module_name)
                     except importlib.metadata.PackageNotFoundError:
                         raise RuntimeError(
-                            f"Package '{package_name}' from entrypoint {base_entry} not found"
+                            f"Package '{module_name}' from entrypoint {base_entry} not found"
                         )
 
-                    # transform base entry to path, for example invenio_records_resources.records.jsonschemas -> invenio_records_resources/records/jsonschemas
-                    # which is used later to compute relative path of given json schema
-                    path = "/".join(base_entry.value.split("."))
-
                     # get all files located in given folder and save as dictionary with key schema_name and value is path to that file
-                    # for example:
-                    # {
-                    #  "__init__.py": invenio_records_resources/records/jsonschemas/__init__.py
-                    #  "definitions-v1.0.0": invenio_records_resources/records/jsonschemas/definitions-v1.0.0.json
-                    #   etc...
-                    # }
-                    relevant_files = {
-                        str(file.relative_to(path)): file
-                        for file in files
-                        if str(file).startswith(path)
-                    }
+                    if files.is_dir():
+                        relevant_files = {}
+
+                        def collect_files(traversable, relative_path=""):
+                            for item in traversable.iterdir():
+                                if item.is_file():
+                                    # Create relative path
+                                    item_relative = (
+                                        f"{relative_path}/{item.name}"
+                                        if relative_path
+                                        else item.name
+                                    )
+                                    # TODO: current oarepo-model version of in-memory files saves jsonschemas prefix in name
+                                    item_relative = item_relative.removeprefix(
+                                        "jsonschemas/"
+                                    )
+                                    relevant_files[item_relative] = item
+                                elif item.is_dir():
+                                    # Recursively process subdirectories
+                                    subdir_relative = (
+                                        f"{relative_path}/{item.name}"
+                                        if relative_path
+                                        else item.name
+                                    )
+                                    collect_files(item, subdir_relative)
+
+                        collect_files(files)
 
                     # register schemas
                     state.register_schemas_dir(relevant_files)
