@@ -124,58 +124,75 @@ class mock_open(object):
 
     counter = 0
 
-    def __init__(self, path):
+    def __init__(self, path, *args, **kwargs):
         """Initialize the open with a path."""
         self.path = path
+        self.args = args
+        self.kwargs = kwargs
 
-    def __enter__(self, *args, **kwargs):
+    def __enter__(self):
         """Context enter."""
-        self.f = open(self.path)
+        self.f = open(self.path, *self.args, **self.kwargs)
         mock_open.counter += 1
         return self.f
 
-    def __exit__(self, *args, **kwargs):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         """Context exit."""
         self.f.close()
+        return False
 
 
-@pytest.mark.skip
 def test_cache(app, dir_factory):
     """Test cached schema loading."""
-    m = mock_open
-    with mock.patch("invenio_jsonschemas.ext.open", m):
+    counter = {"count": 0}
+
+    def fake_read_text(self, *args, **kwargs):
+        counter["count"] += 1
+        return self._real_read_text(*args, **kwargs)
+
+    Path._real_read_text = Path.read_text
+
+    with mock.patch("pathlib.Path.read_text", new=fake_read_text):
         ext = InvenioJSONSchemas(app, entry_point_group=None)
         schema_files = build_schemas(1)
 
         with dir_factory(schema_files) as directory:
-            schema_paths = []
+            schema_paths = {}
             for filename in schema_files:
                 file_path = Path(directory) / filename
-                schema_paths.append(file_path)
+                schema_paths[filename] = file_path
 
-            ext.register_schemas_dir(schema_paths, directory)
-            assert m.counter == 0
+            ext.register_schemas_dir(schema_paths)
+            assert counter["count"] == 0
+
             ext.get_schema("rootschema_1.json")
-            assert m.counter == 1
+            assert counter["count"] == 1
+
+            # cached
             ext.get_schema("rootschema_1.json")
             ext.get_schema("rootschema_1.json")
-            assert m.counter == 1
+            assert counter["count"] == 1
+
             ext.get_schema("sub1/subschema_1.json")
-            assert m.counter == 2
+            assert counter["count"] == 2
+
+            # cached
             ext.get_schema("sub1/subschema_1.json")
-            assert m.counter == 2
+            assert counter["count"] == 2
 
 
-@pytest.mark.skip
 def test_register_schema(app, dir_factory):
     """Test register schema."""
     ext = InvenioJSONSchemas(app, entry_point_group=None)
     schema_files = build_schemas(1)
     with dir_factory(schema_files) as directory:
         registered_schemas = set(list(schema_files.keys())[:1])
+
         nonregistered_schema = [s for s in schema_files if s not in registered_schemas]
-        for schema in registered_schemas:
-            ext.register_schema(directory, schema)
+
+        schema = next(iter(schema_files.keys()))
+        file_path = Path(directory) / schema
+        ext.register_schema(schema, file_path)
         assert set(ext.list_schemas()) == registered_schemas
 
         for schema in nonregistered_schema:
@@ -220,9 +237,11 @@ def test_view(app, pkg_factory, mock_entry_points):
     entry_point_group = "invenio_jsonschema_test_entry_point"
     endpoint = "/testschemas"
     app.config["JSONSCHEMAS_ENDPOINT"] = endpoint
-    with pkg_factory(schema_files_1) as pkg1, pkg_factory(
-        schema_files_2
-    ) as pkg2, pkg_factory(schema_files_3) as pkg3:
+    with (
+        pkg_factory(schema_files_1) as pkg1,
+        pkg_factory(schema_files_2) as pkg2,
+        pkg_factory(schema_files_3) as pkg3,
+    ):
         mock_entry_points.add(entry_point_group, "entry1", pkg1)
         mock_entry_points.add(entry_point_group, "entry2", pkg2)
         mock_entry_points.add(entry_point_group, "entry3", pkg3)
@@ -235,7 +254,7 @@ def test_view(app, pkg_factory, mock_entry_points):
 
         with app.test_client() as client:
             for name, schema in all_schemas.items():
-                res = client.get("{0}/{1}".format(endpoint, name))
+                res = client.get("{0}/{1}".format(endpoint, quote(name)))
                 assert res.status_code == 200
                 assert json.loads(schema) == json.loads(res.get_data(as_text=True))
             res = client.get("{0}/nonexisting".format(endpoint))
@@ -287,7 +306,7 @@ def test_replace_refs_in_view(app, pkg_factory, mock_entry_points):
 def test_replace_resolve_in_view(app, pkg_factory, mock_entry_points):
     """Test replace refs config in view."""
     schemas = {
-        "root.json": '{"type": "object","allOf":' '[{"$ref": "sub/schema.json"}]}',
+        "root.json": '{"type": "object","allOf":[{"$ref": "sub/schema.json"}]}',
         "sub/schema.json": schema_template.format("test"),
     }
 
@@ -323,7 +342,6 @@ def test_replace_resolve_in_view(app, pkg_factory, mock_entry_points):
             )
 
 
-@pytest.mark.skip
 def test_alternative_entry_point_group_init(app, pkg_factory, mock_entry_points):
     """Test initializing the entry_point_group after creating the extension."""
     schema_files_1 = build_schemas(1)
@@ -435,7 +453,6 @@ def test_url_mapping(app, dir_factory, url_scheme):
             assert ext.path_to_url("invalid.json") is None
 
 
-@pytest.mark.skip
 @pytest.mark.parametrize(
     "whitelisted, expected",
     [
@@ -501,14 +518,18 @@ def test_resolve_schema():
     assert resolve_schema(test_schema) == resolved_schema
 
 
-@pytest.mark.skip
 def test_export_refresolver_store(app, dir_factory):
     """Test export local ref resolver store."""
     ext = InvenioJSONSchemas(app, entry_point_group=None)
     schema_files = build_schemas(1)
     with dir_factory(schema_files) as directory:
-        for schema in schema_files.keys():
-            ext.register_schema(directory, schema)
+        schema_paths = {}
+        for filename in schema_files:
+            file_path = Path(directory) / filename
+            schema_paths[filename] = file_path
+
+        for schema, path in schema_paths.items():
+            ext.register_schema(schema, path)
 
         for schema in ext.refresolver_store():
             assert schema.startswith(

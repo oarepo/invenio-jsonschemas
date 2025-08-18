@@ -281,28 +281,15 @@ class InvenioJSONSchemas(object):
                     if files.is_dir():
                         relevant_files = {}
 
-                        def collect_files(traversable, relative_path=""):
+                        def collect_files(traversable):
                             for item in traversable.iterdir():
                                 if item.is_file():
                                     # Create relative path
-                                    item_relative = (
-                                        f"{relative_path}/{item.name}"
-                                        if relative_path
-                                        else item.name
-                                    )
-                                    # TODO: current oarepo-model version of in-memory files saves jsonschemas prefix in name
-                                    item_relative = item_relative.removeprefix(
-                                        "jsonschemas/"
-                                    )
+                                    item_relative = str(item.relative_to(files))
                                     relevant_files[item_relative] = item
                                 elif item.is_dir():
                                     # Recursively process subdirectories
-                                    subdir_relative = (
-                                        f"{relative_path}/{item.name}"
-                                        if relative_path
-                                        else item.name
-                                    )
-                                    collect_files(item, subdir_relative)
+                                    collect_files(item)
 
                         collect_files(files)
 
