@@ -281,17 +281,19 @@ class InvenioJSONSchemas(object):
                     if files.is_dir():
                         relevant_files = {}
 
-                        def collect_files(traversable):
+                        def collect_files(traversable, relative_to_path=[]):
                             for item in traversable.iterdir():
                                 if item.is_file():
                                     # Create relative path
-                                    item_relative = str(item.relative_to(files))
+                                    item_relative = "/".join(
+                                        relative_to_path + [item.name]
+                                    )
                                     relevant_files[item_relative] = item
                                 elif item.is_dir():
                                     # Recursively process subdirectories
-                                    collect_files(item)
+                                    collect_files(item, relative_to_path + [item.name])
 
-                        collect_files(files)
+                        collect_files(files, relative_to_path=[])
 
                     # register schemas
                     state.register_schemas_dir(relevant_files)
